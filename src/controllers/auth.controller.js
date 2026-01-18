@@ -5,7 +5,8 @@ const jwt = require("jsonwebtoken");
 const roles = require("../constants/roles");
 const MembershipPlan = require("../models/MembershipPlan");
 const GymMembership = require("../models/GymMembership");
-
+const sendEmail = require("../utils/sendEmail");
+const emailTemplate = require("../utils/emailTemplate"); // agar alag file me rakho
 
 /**
  * LOGIN (ALL ROLES)
@@ -71,15 +72,24 @@ exports.login = async (req, res) => {
 
 //  * SUPER_ADMIN → CREATE GYM OWNER
 //  */
+
 exports.createGymOwner = async (req, res) => {
   try {
     const { name, email, password, gymName, membershipPlanId } = req.body;
 
-    // 1️⃣ Create GymOwner User
+    // 0️⃣ Duplicate email check
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(409).json({
+        message: "Email already registered"
+      });
+    }
+
+    // 1️⃣ Create Gym Owner
     const gymOwner = await User.create({
       name,
       email,
-      password, // Assume hashed in pre-save
+      password,
       role: roles.GYM_OWNER,
       isActive: true
     });
@@ -91,41 +101,61 @@ exports.createGymOwner = async (req, res) => {
       isActive: true
     });
 
-    // 3️⃣ Link Gym to GymOwner
+    // 3️⃣ Link gym to owner
     gymOwner.gymId = gym._id;
     await gymOwner.save();
 
     let gymMembership = null;
 
-    // 4️⃣ Assign MembershipPlan if given
+    // 4️⃣ Assign membership (optional)
     if (membershipPlanId) {
       const plan = await MembershipPlan.findById(membershipPlanId);
-      if (!plan) return res.status(400).json({ message: "Invalid membership plan" });
+      if (!plan) {
+        return res.status(400).json({ message: "Invalid membership plan" });
+      }
 
       gymMembership = await GymMembership.create({
         gymId: gym._id,
         planId: plan._id,
-        purchasedBy: req.user.id, // SUPER_ADMIN ID
+        purchasedBy: req.user.id,
         maxMembers: plan.maxMembers,
         startDate: new Date(),
-        endDate: new Date(Date.now() + plan.durationInDays * 24 * 60 * 60 * 1000)
+        endDate: new Date(
+          Date.now() + plan.durationInDays * 24 * 60 * 60 * 1000
+        )
       });
     }
 
-    // 5️⃣ Prepare response with membership included
-    const responseGym = {
-      ...gym.toObject(),
-      membership: gymMembership || null
-    };
+    // 🔥 5️⃣ AUTO SEND EMAIL (REAL FLOW)
+await sendEmail({
+  to: gymOwner.email,
+  subject: "Your Gym is Successfully Registered 🎉",
+  html: emailTemplate({
+    ownerName: gymOwner.name,
+    gymName: gym.name,
+    softwareLogo: "https://fitorbitin.netlify.app/assets/upscalemedia-transformed%20(1)-Picsart-AiImageEnhancer-DyruvC3W.png",
+    gymLogo: null // future me gym logo aayega
+  })
+});
 
+
+    // 6️⃣ Response
     res.status(201).json({
-      message: "Gym Owner created",
+      message: "Gym Owner created & email sent automatically",
       gymOwner,
-      gym: responseGym
+      gym,
+      membership: gymMembership
     });
 
   } catch (err) {
-    console.error(err);
+    console.error("CREATE GYM OWNER ERROR:", err);
+
+    if (err.code === 11000) {
+      return res.status(409).json({
+        message: "Email already exists"
+      });
+    }
+
     res.status(500).json({ message: err.message });
   }
 };

@@ -8,7 +8,9 @@ const roles = require("../constants/roles");
 // SUPER_ADMIN only
 router.post("/", authMiddleware, roleMiddleware(roles.SUPER_ADMIN), membershipController.createPlan);
 router.get("/", authMiddleware, roleMiddleware(roles.SUPER_ADMIN), membershipController.getAllPlans);
+router.get("/:planId", authMiddleware, roleMiddleware(roles.SUPER_ADMIN), membershipController.getPlan);
 router.put("/:planId", authMiddleware, roleMiddleware(roles.SUPER_ADMIN), membershipController.updatePlan);
 router.delete("/:planId", authMiddleware, roleMiddleware(roles.SUPER_ADMIN), membershipController.deletePlan);
+router.patch("/:planId/toggle-status", authMiddleware, roleMiddleware(roles.SUPER_ADMIN), membershipController.togglePlanStatus);
 
 module.exports = router;
